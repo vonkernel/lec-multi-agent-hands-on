@@ -1,0 +1,18 @@
+{
+  "name": "AI Agent 설계 심화 for Multi Agent 실습",
+  "image": "mcr.microsoft.com/devcontainers/python:3-3.14-trixie",
+  "forwardPorts": [6006],
+  "portsAttributes": {
+    "6006": {"label": "Phoenix (트레이싱 UI)"}
+  },
+  "postCreateCommand": "pip3 install --user 'langchain[mcp]==1.4.4' langchain-core==1.6.9 langchain-openai==1.7.0 langgraph==1.2.14 fastmcp==4.1.0 mcp==2.3.0 tavily-python==0.8.5 agentevals==0.0.9 arize-phoenix==20.21.3 openinference-instrumentation-langchain==0.1.79",
+  "secrets": {
+    "OPENAI_API_KEY": {
+      "description": "실습 Agent가 OpenAI 모델을 호출할 때 쓰는 API 키 (강사 제공)"
+    },
+    "TAVILY_API_KEY": {
+      "description": "검색 MCP 서버가 Tavily 검색을 호출할 때 쓰는 API 키 (본인이 무료로 발급)",
+      "documentationUrl": "https://docs.tavily.com/documentation/api-credits"
+    }
+  }
+}
