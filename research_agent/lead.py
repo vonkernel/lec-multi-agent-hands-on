@@ -1,10 +1,12 @@
 """리드: 조사를 계획하고 Sub Agent에 맡긴다. 보고서는 직접 쓰지 않는다"""
 
 import asyncio
+import json
 import operator
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, NotRequired
 
 from langchain.agents import AgentState, create_agent
@@ -14,10 +16,18 @@ from langchain.agents.middleware import (
 from langchain.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
+from openinference.instrumentation.langchain import LangChainInstrumentor
+from phoenix.otel import register
 
 from checker import check_citations
 from researcher import connect_search, research
 from writer import write_report
+
+# 세션 4 1단계: LangChain 실행을 trace로 기록해 Phoenix(localhost:6006)로 보낸다
+tracer_provider = register(project_name="research-agent", protocol="http/protobuf", batch=True,
+                           set_global_tracer_provider=False)  # MCP SDK가 남기는 span은 보내지 않는다
+# LangChain만 계측한다. OpenAI SDK까지 계측하면 모델 호출 하나가 span 두 개로 기록되어 토큰과 비용이 두 번 잡힌다
+LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
 
 PROMPT = """너는 리서치 보고서 작업을 감독하는 리드다. 보고서 본문은 직접 쓰지 않는다.
 1. 주제를 겹치지 않는 하위 주제 3-4개로 나누되, 핵심 정의·수치·일정을 다루는 하위 주제를 하나 포함한다.
@@ -31,6 +41,7 @@ PROMPT = """너는 리서치 보고서 작업을 감독하는 리드다. 보고�
 class LeadState(AgentState):
     findings: NotRequired[Annotated[list[dict], operator.add]]  # researcher가 남긴 조사 결과
     drafts: NotRequired[Annotated[list[str], operator.add]]     # writer가 저장한 보고서 경로
+    searches: NotRequired[Annotated[list[dict], operator.add]]  # 세션 4 1단계: researcher별 검색 기록
 
 
 lead = create_agent(
@@ -119,13 +130,21 @@ async def main(topic):
     cfg = {"configurable": {"thread_id": datetime.now().strftime("%m%d-%H%M%S")}}
     started = time.perf_counter()
     try:
-        await run({"messages": [{"role": "user", "content": topic}]}, cfg)
+        state = await run({"messages": [{"role": "user", "content": topic}]}, cfg)
     except Exception as e:  # 세션 3 3단계: 오류로 멈춘 실행을 같은 thread에서 이어서 실행
         snap = await lead.aget_state(cfg)  # 오류 직전까지 저장된 checkpoint
         print(f"중단: {e!r}\n다음 노드: {snap.next} | 저장된 조사 결과: {len(snap.values.get('findings', []))}개")
         input("Enter를 누르면 멈춘 곳부터 이어서 실행합니다 > ")
-        await run(None, cfg)  # 새 입력 없이 저장된 지점부터 실행한다
+        state = await run(None, cfg)  # 새 입력 없이 저장된 지점부터 실행한다
     print(f"총 {time.perf_counter() - started:.0f}초")
+
+    # 세션 4 1단계: 분석에 쓸 실행 기록을 artifact로 남긴다
+    record = {"topic": topic, "lead_calls": [c["name"] for m in state["messages"] if m.type == "ai"
+                                             for c in m.tool_calls],
+              "searches": state["searches"], "drafts": state["drafts"]}
+    run_file = Path("artifacts") / cfg["configurable"]["thread_id"] / "run.json"
+    run_file.write_text(json.dumps(record, ensure_ascii=False, indent=1))
+    print("실행 기록:", run_file)
 
     # 세션 3 2단계
     topics = input("하위 주제를 바꿔 다시 실행하려면 ;로 구분해 입력 (Enter: 끝) > ").strip()

@@ -1,6 +1,7 @@
 """researcher: 하위 주제 하나를 검색해 결과를 돌려준다"""
 
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -74,9 +75,15 @@ async def research(subject: str, topic: str, scope: str, period: str, must_inclu
     findings = out["structured_response"]
     used = sum(m.usage_metadata["input_tokens"] for m in out["messages"] if m.type == "ai")  # 세션 3 4단계
     print(f"  [researcher] {time.perf_counter() - started:.0f}초, 입력 {used:,} 토큰 | {topic} ({period})")
+    # 세션 4 1단계: researcher가 한 검색 호출과 검색 결과에 나온 URL을 남긴다
+    calls = [{"name": c["name"], **c["args"]} for m in out["messages"] if m.type == "ai"
+             for c in m.tool_calls]
+    urls = sorted({u for m in out["messages"] if m.type == "tool"
+                   for u in re.findall(r"https?://[^\s\"'<>)\]]+", m.text)})
     # 4단계: 조사 결과는 state에 두고, 리드에게는 요약만 돌려준다
     return Command(update={
         "findings": [{"topic": topic, **findings.model_dump()}],  # writer가 읽는 조사 결과
+        "searches": [{"topic": topic, "calls": calls, "searched_urls": urls}],  # 세션 4 1단계: 분석용 기록
         "messages": [ToolMessage(f"{findings.summary}\n(출처 {len(findings.sources)}개)",
                                  tool_call_id=runtime.tool_call_id)],  # 리드가 보는 것
     })
