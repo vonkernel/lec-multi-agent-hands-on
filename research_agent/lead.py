@@ -8,6 +8,9 @@ from datetime import datetime
 from typing import Annotated, NotRequired
 
 from langchain.agents import AgentState, create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
 
 from checker import check_citations
 from researcher import connect_search, research
@@ -27,13 +30,25 @@ class LeadState(AgentState):
     drafts: NotRequired[Annotated[list[str], operator.add]]     # writer가 저장한 보고서 경로
 
 
-lead = create_agent("openai:gpt-6-luna", tools=[research, write_report, check_citations], system_prompt=PROMPT,
-                    state_schema=LeadState, name="lead")
+lead = create_agent(
+    "openai:gpt-6-luna",
+    tools=[research, write_report, check_citations],
+    system_prompt=PROMPT,
+    state_schema=LeadState,
+    name="lead",
+    middleware=[
+        # 세션 3 1단계: 검색 전에 조사 계획(research 호출)을 사람이 승인한다
+        HumanInTheLoopMiddleware(interrupt_on={"research": True}),
+    ],
+    checkpointer=InMemorySaver(),  # 세션 3 1단계: 멈춘 뒤 재개하려면 실행 상태를 저장해야 한다
+)
 
 
 def show(update):
     """리드의 단계를 한 줄씩 출력한다."""
-    for value in update.values():
+    for node, value in update.items():
+        if node not in ("model", "tools"):  # 미들웨어 노드와 interrupt 알림은 건너뛴다
+            continue
         for m in value["messages"]:
             if m.type == "ai":
                 calls = ", ".join(f"{c['name']}({c['args'].get('topic', '')})" for c in m.tool_calls)
@@ -42,13 +57,41 @@ def show(update):
                 print(f"  [{m.name}] {len(m.text):,}자 | {' '.join(m.text.split())[:200]}")
 
 
+# 세션 3 1단계: 조사 계획 승인
+def ask_human(request):
+    """research 호출마다 승인, 수정, 거절을 묻는다."""
+    decisions = []
+    for action in request["action_requests"]:
+        args = action["args"]
+        print(f"[계획] {args['topic']} | 범위: {args['scope']} | 기간: {args['period']}")
+        answer = input("  승인 Enter / 하위 주제 수정 e / 거절 n > ").strip()
+        if answer == "e":
+            args = {**args, "topic": input("  새 하위 주제 > ")}
+            decisions.append({"type": "edit", "edited_action": {"name": "research", "args": args}})
+        elif answer == "n":
+            decisions.append({"type": "reject", "message": "사람이 이 하위 주제를 계획에서 뺐다"})
+        else:
+            decisions.append({"type": "approve"})
+    return decisions
+
+
+async def run(inputs, cfg):
+    """리드를 실행한다. 승인 단계에서 멈추면 사람에게 묻고 같은 thread로 재개한다."""
+    while True:
+        async for update in lead.astream(inputs, cfg, stream_mode="updates"):
+            show(update)
+        state = await lead.aget_state(cfg)
+        if not state.interrupts:  # 멈춘 곳이 없으면 끝까지 실행된 것이다
+            return state.values
+        inputs = Command(resume={"decisions": ask_human(state.interrupts[0].value)})
+
+
 async def main(topic):
     await connect_search()  # 6단계: search 서버에 한 번 연결한다
-    cfg = {"configurable": {"thread_id": datetime.now().strftime("%m%d-%H%M%S")}}  # 실행 ID. 보고서 폴더 이름
+    # 실행 ID. checkpoint를 저장하는 thread이자 보고서 폴더 이름
+    cfg = {"configurable": {"thread_id": datetime.now().strftime("%m%d-%H%M%S")}}
     started = time.perf_counter()
-    async for update in lead.astream({"messages": [{"role": "user", "content": topic}]}, cfg,
-                                     stream_mode="updates"):
-        show(update)
+    await run({"messages": [{"role": "user", "content": topic}]}, cfg)
     print(f"총 {time.perf_counter() - started:.0f}초")
 
 
