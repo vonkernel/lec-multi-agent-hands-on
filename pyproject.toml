@@ -1,0 +1,16 @@
+[project]
+name = "lec-multi-agent-hands-on"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "agentevals==0.0.9",
+    "arize-phoenix==20.21.3",
+    "fastmcp==4.1.0",
+    "langchain-core==1.6.9",
+    "langchain-openai==1.7.0",
+    "langchain[mcp]==1.4.4",
+    "langgraph==1.2.14",
+    "mcp==2.3.0",
+    "openinference-instrumentation-langchain==0.1.79",
+    "tavily-python==0.8.5",
+]
