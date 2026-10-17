@@ -9,3 +9,6 @@ __pycache__/
 
 # IntelliJ 프로젝트 설정
 .idea/
+
+# 실행 결과물 (보고서 버전 파일, 실행 기록)
+artifacts/
