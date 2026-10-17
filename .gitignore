@@ -1,0 +1,11 @@
+# uv 가상 환경
+.venv/
+
+# Python 바이트코드
+__pycache__/
+
+# 로컬 환경 변수 (API 키)
+.env
+
+# IntelliJ 프로젝트 설정
+.idea/
