@@ -9,11 +9,16 @@ from tavily import TavilyClient
 client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
 
-def search(query: str, lang: Literal["ko", "en"] = "ko") -> str:
+def search(query: str, lang: Literal["ko", "en"] = "ko", start_date: str | None = None,
+           end_date: str | None = None) -> str:
     """웹을 검색해 상위 5개 결과의 제목, URL, 본문 일부를 돌려준다.
-    한국 관련 주제는 lang="ko", 해외 동향은 lang="en"으로 검색한다."""
+    한국 관련 주제는 lang="ko", 해외 동향은 lang="en"으로 검색한다.
+    기간 조건이 있으면 start_date, end_date(YYYY-MM-DD)를 주어 그 기간에 발행된 문서만 찾는다."""
     korean = {"language": "ko", "country": "south korea"} if lang == "ko" else {}
-    response = client.search(query, search_depth="basic", max_results=5, **korean)  # basic: 1크레딧
+    # 세션 2 3단계: 기간이 있으면 발행일로 거르고, 발행일을 알 수 없는 문서도 뺀다
+    period = ({"start_date": start_date, "end_date": end_date, "filter_by_published_date": True}
+              if start_date or end_date else {})
+    response = client.search(query, search_depth="basic", max_results=5, **korean, **period)  # basic: 1크레딧
     return json.dumps(response, ensure_ascii=False)
 
 

@@ -11,6 +11,7 @@ from researcher import research
 PROMPT = """너는 리서치 작업을 감독하는 리드다.
 1. 주제를 겹치지 않는 하위 주제 3-4개로 나누되, 핵심 정의·수치·일정을 다루는 하위 주제를 하나 포함한다.
    research는 한 번에 병렬로 호출한다.
+   사용자가 정한 기간과 범위 조건은 모든 호출에 그대로 옮긴다.
 2. 조사가 끝나면 하위 주제별로 두세 문장씩 정리해 답한다."""
 
 lead = create_agent("openai:gpt-6-luna", tools=[research], system_prompt=PROMPT, name="lead")
