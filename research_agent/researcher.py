@@ -72,7 +72,8 @@ async def research(subject: str, topic: str, scope: str, period: str, must_inclu
     # researcher는 리드의 대화를 보지 않는다. 받는 것은 이 작업 지시 하나뿐이다
     out = await researcher.ainvoke({"messages": [{"role": "user", "content": task}]})
     findings = out["structured_response"]
-    print(f"  [researcher] {time.perf_counter() - started:.0f}초 | {topic} ({period})")
+    used = sum(m.usage_metadata["input_tokens"] for m in out["messages"] if m.type == "ai")  # 세션 3 4단계
+    print(f"  [researcher] {time.perf_counter() - started:.0f}초, 입력 {used:,} 토큰 | {topic} ({period})")
     # 4단계: 조사 결과는 state에 두고, 리드에게는 요약만 돌려준다
     return Command(update={
         "findings": [{"topic": topic, **findings.model_dump()}],  # writer가 읽는 조사 결과

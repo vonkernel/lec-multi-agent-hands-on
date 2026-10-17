@@ -8,7 +8,9 @@ from datetime import datetime
 from typing import Annotated, NotRequired
 
 from langchain.agents import AgentState, create_agent
-from langchain.agents.middleware import HumanInTheLoopMiddleware
+from langchain.agents.middleware import (
+    ClearToolUsesEdit, ContextEditingMiddleware, HumanInTheLoopMiddleware,
+)
 from langchain.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
@@ -40,6 +42,9 @@ lead = create_agent(
     middleware=[
         # 세션 3 1단계: 검색 전에 조사 계획(research 호출)을 사람이 승인한다
         HumanInTheLoopMiddleware(interrupt_on={"research": True}),
+        # 세션 3 4단계: 메시지가 1,000토큰(근사치)을 넘으면 최근 도구 결과 2개만 남기고 비워서 모델에 보낸다
+        ContextEditingMiddleware(edits=[ClearToolUsesEdit(
+            trigger=1000, keep=2, placeholder="[정리됨. 조사 결과는 writer와 checker가 state에서 읽는다]")]),
     ],
     checkpointer=InMemorySaver(),  # 세션 3 1단계: 멈춘 뒤 재개하려면 실행 상태를 저장해야 한다
 )
