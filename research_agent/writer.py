@@ -1,6 +1,7 @@
 """writer: 조사 결과로 보고서를 쓰고 artifact 파일로 저장한다"""
 
 import json
+import os
 from pathlib import Path
 
 from langchain.agents import create_agent
@@ -24,6 +25,8 @@ writer = create_agent("openai:gpt-6-luna", tools=[], system_prompt=PROMPT, name=
 async def write_report(instructions: str, runtime: ToolRuntime) -> Command | str:
     """조사 결과로 보고서를 쓰거나, 수정 지시에 따라 고쳐 쓴다. 조사 결과는 자동으로 전달된다.
     instructions: 보고서 구성과 강조점, 또는 검토에서 나온 수정 지시"""
+    if os.environ.pop("FAIL_WRITER", None):  # 세션 3 3단계: 실습용 오류. 한 번만 난다
+        raise TimeoutError("writer 모델 응답 시간 초과 (실습용 오류)")
     drafts = runtime.state.get("drafts", [])
     if len(drafts) > MAX_REVISIONS:  # 5단계: 처음 작성 1번 + 수정 3번까지
         return f"수정 상한({MAX_REVISIONS}회)에 도달했다. 최종 보고서: {drafts[-1]}"

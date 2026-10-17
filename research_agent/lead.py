@@ -113,7 +113,13 @@ async def main(topic):
     # 실행 ID. checkpoint를 저장하는 thread이자 보고서 폴더 이름
     cfg = {"configurable": {"thread_id": datetime.now().strftime("%m%d-%H%M%S")}}
     started = time.perf_counter()
-    await run({"messages": [{"role": "user", "content": topic}]}, cfg)
+    try:
+        await run({"messages": [{"role": "user", "content": topic}]}, cfg)
+    except Exception as e:  # 세션 3 3단계: 오류로 멈춘 실행을 같은 thread에서 이어서 실행
+        snap = await lead.aget_state(cfg)  # 오류 직전까지 저장된 checkpoint
+        print(f"중단: {e!r}\n다음 노드: {snap.next} | 저장된 조사 결과: {len(snap.values.get('findings', []))}개")
+        input("Enter를 누르면 멈춘 곳부터 이어서 실행합니다 > ")
+        await run(None, cfg)  # 새 입력 없이 저장된 지점부터 실행한다
     print(f"총 {time.perf_counter() - started:.0f}초")
 
     # 세션 3 2단계
