@@ -92,15 +92,15 @@ def ask_human(request):
     return decisions
 
 
-async def run(inputs, cfg):
-    """리드를 실행한다. 승인 단계에서 멈추면 사람에게 묻고 같은 thread로 재개한다."""
+async def run(inputs, cfg, ask=ask_human):
+    """리드를 실행한다. 승인 단계에서 멈추면 ask로 결정을 받고 같은 thread로 재개한다."""
     while True:
         async for update in lead.astream(inputs, cfg, stream_mode="updates"):
             show(update)
         state = await lead.aget_state(cfg)
         if not state.interrupts:  # 멈춘 곳이 없으면 끝까지 실행된 것이다
             return state.values
-        inputs = Command(resume={"decisions": ask_human(state.interrupts[0].value)})
+        inputs = Command(resume={"decisions": ask(state.interrupts[0].value)})  # 세션 4 3단계: 평가는 자동 승인
         # 세션 3 2단계: fork의 cfg에는 갈라진 지점의 checkpoint_id가 있다. 그대로 두면 다음 재개가 그 지점으로 돌아가므로
         # thread만 남겨 최신 지점에서 재개한다
         cfg = {"configurable": {"thread_id": cfg["configurable"]["thread_id"]}}
