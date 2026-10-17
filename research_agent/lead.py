@@ -9,6 +9,7 @@ from typing import Annotated, NotRequired
 
 from langchain.agents import AgentState, create_agent
 
+from checker import check_citations
 from researcher import research
 from writer import write_report
 
@@ -17,14 +18,16 @@ PROMPT = """너는 리서치 보고서 작업을 감독하는 리드다. 보고�
    research는 한 번에 병렬로 호출한다.
    사용자가 정한 기간과 범위 조건은 모든 호출에 그대로 옮긴다.
 2. 조사가 끝나면 write_report로 보고서를 쓰게 한다.
-3. 끝나면 보고서 경로를 한 문장으로 답한다."""
+3. check_citations로 검토한다. '수정 필요'면 지적 사항을 write_report의 instructions로 넘겨 고치게 하고 다시 검토한다. 수정 지시는 최대 3번이다.
+4. 끝나면 최종 보고서 경로와 검토 결과를 두세 문장으로 답한다."""
 
 
 class LeadState(AgentState):
     findings: NotRequired[Annotated[list[dict], operator.add]]  # researcher가 남긴 조사 결과
+    drafts: NotRequired[Annotated[list[str], operator.add]]     # writer가 저장한 보고서 경로
 
 
-lead = create_agent("openai:gpt-6-luna", tools=[research, write_report], system_prompt=PROMPT,
+lead = create_agent("openai:gpt-6-luna", tools=[research, write_report, check_citations], system_prompt=PROMPT,
                     state_schema=LeadState, name="lead")
 
 
