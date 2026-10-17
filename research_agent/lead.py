@@ -10,7 +10,7 @@ from typing import Annotated, NotRequired
 from langchain.agents import AgentState, create_agent
 
 from checker import check_citations
-from researcher import research
+from researcher import connect_search, research
 from writer import write_report
 
 PROMPT = """너는 리서치 보고서 작업을 감독하는 리드다. 보고서 본문은 직접 쓰지 않는다.
@@ -43,6 +43,7 @@ def show(update):
 
 
 async def main(topic):
+    await connect_search()  # 6단계: search 서버에 한 번 연결한다
     cfg = {"configurable": {"thread_id": datetime.now().strftime("%m%d-%H%M%S")}}  # 실행 ID. 보고서 폴더 이름
     started = time.perf_counter()
     async for update in lead.astream({"messages": [{"role": "user", "content": topic}]}, cfg,

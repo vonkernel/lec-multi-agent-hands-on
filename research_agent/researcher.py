@@ -1,15 +1,17 @@
 """researcher: 하위 주제 하나를 검색해 결과를 돌려준다"""
 
+import os
+import sys
 import time
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 from langchain.agents import create_agent
 from langchain.agents.middleware import ToolCallLimitMiddleware
+from langchain.mcp import MCPAdapter
 from langchain.messages import ToolMessage
 from langchain.tools import ToolRuntime, tool
 from langgraph.types import Command
-
-from tavily_search import fetch, search
 
 PROMPT = """너는 조사 담당이다. 받은 하위 주제 하나만 조사한다.
 - search로 2-3번 검색한다. 검색 결과의 본문 일부로 부족할 때만 fetch로 본문을 읽는다.
@@ -41,8 +43,23 @@ class ResearchTask(BaseModel):
     must_include: list[str] = Field(description="결과에 꼭 들어가야 할 항목")
 
 
-researcher = create_agent("openai:gpt-6-luna", tools=[tool(search), tool(fetch)], system_prompt=PROMPT,
-                          response_format=Findings, middleware=[SEARCH_LIMIT], name="researcher")
+# 6단계: 검색 MCP 서버
+SEARCH_SERVER = {"mcpServers": {"search": {
+    "command": sys.executable,
+    "args": [str(Path(__file__).with_name("search_server.py"))],
+    "env": {"TAVILY_API_KEY": os.environ["TAVILY_API_KEY"]},  # stdio 서버는 환경 변수를 물려받지 않는다
+}}}
+
+researcher = None  # 실행을 시작할 때 connect_search가 만든다
+
+
+async def connect_search():
+    """search 서버에서 MCP 도구를 한 번 받아 researcher를 만든다. 서버 프로세스는 실행 내내 재사용된다."""
+    global researcher
+    async with MCPAdapter(SEARCH_SERVER) as adapter:
+        tools = await adapter.list_tools()  # 도구가 연결을 들고 있어, 컨텍스트가 끝난 뒤에도 쓸 수 있다
+    researcher = create_agent("openai:gpt-6-luna", tools, system_prompt=PROMPT,
+                              response_format=Findings, middleware=[SEARCH_LIMIT], name="researcher")
 
 
 @tool(args_schema=ResearchTask)
