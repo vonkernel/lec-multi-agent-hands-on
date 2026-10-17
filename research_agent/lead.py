@@ -1,20 +1,31 @@
-"""리드: 조사를 계획하고 Sub Agent에 맡긴다"""
+"""리드: 조사를 계획하고 Sub Agent에 맡긴다. 보고서는 직접 쓰지 않는다"""
 
 import asyncio
+import operator
 import sys
 import time
+from datetime import datetime
+from typing import Annotated, NotRequired
 
-from langchain.agents import create_agent
+from langchain.agents import AgentState, create_agent
 
 from researcher import research
+from writer import write_report
 
-PROMPT = """너는 리서치 작업을 감독하는 리드다.
+PROMPT = """너는 리서치 보고서 작업을 감독하는 리드다. 보고서 본문은 직접 쓰지 않는다.
 1. 주제를 겹치지 않는 하위 주제 3-4개로 나누되, 핵심 정의·수치·일정을 다루는 하위 주제를 하나 포함한다.
    research는 한 번에 병렬로 호출한다.
    사용자가 정한 기간과 범위 조건은 모든 호출에 그대로 옮긴다.
-2. 조사가 끝나면 하위 주제별로 두세 문장씩 정리해 답한다."""
+2. 조사가 끝나면 write_report로 보고서를 쓰게 한다.
+3. 끝나면 보고서 경로를 한 문장으로 답한다."""
 
-lead = create_agent("openai:gpt-6-luna", tools=[research], system_prompt=PROMPT, name="lead")
+
+class LeadState(AgentState):
+    findings: NotRequired[Annotated[list[dict], operator.add]]  # researcher가 남긴 조사 결과
+
+
+lead = create_agent("openai:gpt-6-luna", tools=[research, write_report], system_prompt=PROMPT,
+                    state_schema=LeadState, name="lead")
 
 
 def show(update):
@@ -29,8 +40,10 @@ def show(update):
 
 
 async def main(topic):
+    cfg = {"configurable": {"thread_id": datetime.now().strftime("%m%d-%H%M%S")}}  # 실행 ID. 보고서 폴더 이름
     started = time.perf_counter()
-    async for update in lead.astream({"messages": [{"role": "user", "content": topic}]}, stream_mode="updates"):
+    async for update in lead.astream({"messages": [{"role": "user", "content": topic}]}, cfg,
+                                     stream_mode="updates"):
         show(update)
     print(f"총 {time.perf_counter() - started:.0f}초")
 

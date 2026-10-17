@@ -5,7 +5,9 @@ import time
 from pydantic import BaseModel, Field
 from langchain.agents import create_agent
 from langchain.agents.middleware import ToolCallLimitMiddleware
-from langchain.tools import tool
+from langchain.messages import ToolMessage
+from langchain.tools import ToolRuntime, tool
+from langgraph.types import Command
 
 from tavily_search import fetch, search
 
@@ -44,12 +46,19 @@ researcher = create_agent("openai:gpt-6-luna", tools=[tool(search), tool(fetch)]
 
 
 @tool(args_schema=ResearchTask)
-async def research(subject: str, topic: str, scope: str, period: str, must_include: list[str]) -> str:
+async def research(subject: str, topic: str, scope: str, period: str, must_include: list[str],
+                   runtime: ToolRuntime) -> Command:
     """하위 주제 하나를 조사 담당 Agent에게 맡긴다. 여러 하위 주제는 한 번에 병렬로 호출한다."""
     task = (f"전체 주제: {subject}\n하위 주제: {topic}\n범위: {scope}\n기간: {period}\n"
             f"꼭 포함할 것: {', '.join(must_include)}")
     started = time.perf_counter()
     # researcher는 리드의 대화를 보지 않는다. 받는 것은 이 작업 지시 하나뿐이다
     out = await researcher.ainvoke({"messages": [{"role": "user", "content": task}]})
+    findings = out["structured_response"]
     print(f"  [researcher] {time.perf_counter() - started:.0f}초 | {topic} ({period})")
-    return out["structured_response"].model_dump_json()  # 요약과 출처를 정해진 형식으로
+    # 4단계: 조사 결과는 state에 두고, 리드에게는 요약만 돌려준다
+    return Command(update={
+        "findings": [{"topic": topic, **findings.model_dump()}],  # writer가 읽는 조사 결과
+        "messages": [ToolMessage(f"{findings.summary}\n(출처 {len(findings.sources)}개)",
+                                 tool_call_id=runtime.tool_call_id)],  # 리드가 보는 것
+    })
