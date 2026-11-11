@@ -1,5 +1,6 @@
 """세션 1 실습: 단일 ReAct 리서치 Agent"""
 
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -29,10 +30,19 @@ def save(report):
 
 
 def main(topic):
-    result = agent.invoke({"messages": [{"role": "user", "content": topic}]})
-    report = result["messages"][-1].text  # 마지막 AI 메시지가 보고서
-    print(report)
-    save(report)
+    # 노드(model, tools)가 끝날 때마다 그 노드가 추가한 메시지를 받는다
+    for update in agent.stream({"messages": [{"role": "user", "content": topic}]}, stream_mode="updates"):
+        for node, value in update.items():
+            for m in value["messages"]:
+                if node == "model":  # 모델 호출 한 번: 요청한 도구마다 한 줄, 없으면 보고서 작성
+                    for c in m.tool_calls:
+                        print("[model]", c["name"], c["args"])
+                    if not m.tool_calls:
+                        print("[model] 보고서 작성")
+                else:  # 도구 결과: 앞의 결과 제목 두 개와 전체 크기
+                    titles = [r.get("title", r["url"]) for r in json.loads(m.text)["results"][:2]]
+                    print(f"  [{m.name}] {len(m.text):,}자 | {titles}")
+    save(m.text)  # 마지막 메시지가 보고서
 
 
 if __name__ == "__main__":
